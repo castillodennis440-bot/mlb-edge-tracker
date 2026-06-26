@@ -1,2 +1,3 @@
-# mlb-edge-tracker
-Premium MLB prediction tracking app
+# MLB Edge Tracker
+
+Supabase schema included in `database/supabase_schema_v1.sql`.
