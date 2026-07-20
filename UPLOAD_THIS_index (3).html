@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MLB Edge Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <style>
+    :root {
+      --void:#01040b; --panel:rgba(8,15,31,.72); --panel-strong:rgba(5,11,24,.9);
+      --stroke:rgba(125,211,252,.18); --stroke-soft:rgba(148,163,184,.13);
+      --text:#f8fafc; --muted:#8ea4bd; --blue:#38bdf8; --blue-hot:#00e5ff; --blue-deep:#1d4ed8;
+      --green:#22c55e; --red:#ef4444; --amber:#f59e0b; --radius:28px;
+      --shadow:0 28px 90px rgba(0,0,0,.62);
+    }
+    *{box-sizing:border-box} html{scroll-behavior:smooth}
+    body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);min-height:100vh;background:var(--void);overflow-x:hidden;padding-bottom:120px}
+    body:before{content:"";position:fixed;inset:0;z-index:-4;background:radial-gradient(circle at 18% 4%,rgba(56,189,248,.26),transparent 31%),radial-gradient(circle at 82% 2%,rgba(37,99,235,.28),transparent 34%),radial-gradient(circle at 50% 65%,rgba(124,58,237,.10),transparent 38%),linear-gradient(180deg,#020617 0%,#01040b 48%,#000 100%)}
+    body:after{content:"";position:fixed;inset:0;z-index:-3;opacity:.34;background-image:linear-gradient(rgba(56,189,248,.10) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,.10) 1px,transparent 1px);background-size:44px 44px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.95),transparent 76%)}
+    .ambient-line{position:fixed;left:-20%;top:0;width:140%;height:1px;z-index:-2;background:linear-gradient(90deg,transparent,rgba(0,229,255,.75),transparent);box-shadow:0 0 32px rgba(0,229,255,.38);animation:scan 5.5s linear infinite}@keyframes scan{0%{transform:translateY(0);opacity:0}10%{opacity:.8}60%{opacity:.28}100%{transform:translateY(100vh);opacity:0}}
+
+    /* ── AUTH SCREEN ── */
+    #authScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+    #authScreen.hidden{display:none}
+    .auth-box{width:min(100%,420px);border:1px solid var(--stroke);background:linear-gradient(135deg,rgba(255,255,255,.07),transparent 34%),rgba(8,15,31,.88);border-radius:34px;padding:36px 28px;box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.10);backdrop-filter:blur(28px)}
+    .auth-logo{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+    .auth-logo .logo{position:relative;width:48px;height:48px;border-radius:18px;background:linear-gradient(135deg,rgba(255,255,255,.22),transparent 34%),linear-gradient(135deg,#00e5ff,#1d4ed8 54%,#020617);box-shadow:0 18px 48px rgba(56,189,248,.28),inset 0 1px 0 rgba(255,255,255,.28);display:grid;place-items:center;font-weight:950;letter-spacing:-.08em;border:1px solid rgba(186,230,253,.28)}
+    .auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:rgba(2,6,23,.5);border-radius:16px;padding:4px;margin-bottom:24px}
+    .auth-tab{padding:9px;border-radius:12px;font-size:13px;font-weight:800;color:var(--muted);background:transparent;border:0;cursor:pointer;transition:.18s}
+    .auth-tab.active{color:white;background:linear-gradient(135deg,rgba(0,229,255,.18),rgba(37,99,235,.12));border:1px solid rgba(0,229,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+    .auth-form{display:grid;gap:12px}
+    .auth-error{color:#fca5a5;font-size:13px;background:rgba(239,68,.22);border:1px solid rgba(239,68,68,.55);border-radius:12px;padding:10px 14px;display:none;margin-bottom:8px;font-weight:600;text-align:center;position:relative;z-index:50}
+    .auth-error.visible{display:block}
+    .auth-note{color:var(--muted);font-size:12px;text-align:center;margin-top:8px;line-height:1.5}
+
+    /* ── MAIN APP ── */
+    #mainApp{display:none}
+    #mainApp.visible{display:block}
+    .app{width:min(100%,1120px);margin:0 auto;padding:18px 16px 30px;position:relative}
+    .orb{position:absolute;right:-88px;top:72px;width:210px;height:210px;border-radius:50%;background:radial-gradient(circle at 38% 32%,rgba(255,255,255,.9),rgba(0,229,255,.56) 8%,rgba(37,99,235,.32) 34%,rgba(3,7,18,.05) 66%),conic-gradient(from 180deg,rgba(56,189,248,0),rgba(56,189,248,.8),rgba(124,58,237,.36),rgba(56,189,248,0));opacity:.55;z-index:-1;box-shadow:0 0 95px rgba(56,189,248,.22)}
+    .orb:after{content:"";position:absolute;inset:22px;border-radius:50%;border:1px solid rgba(219,234,254,.20);box-shadow:inset 0 0 34px rgba(0,229,255,.16)}
+    .topbar{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:16px}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{position:relative;width:48px;height:48px;border-radius:18px;background:linear-gradient(135deg,rgba(255,255,255,.22),transparent 34%),linear-gradient(135deg,#00e5ff,#1d4ed8 54%,#020617);box-shadow:0 18px 48px rgba(56,189,248,.28),inset 0 1px 0 rgba(255,255,255,.28);display:grid;place-items:center;font-weight:950;letter-spacing:-.08em;border:1px solid rgba(186,230,253,.28)}
+    .logo:after{content:"";position:absolute;inset:-6px;border-radius:24px;border:1px solid rgba(56,189,248,.14)}
+    h1,h2,h3,p{margin:0}
+    .eyebrow{color:var(--blue-hot);font-size:10px;text-transform:uppercase;letter-spacing:.22em;font-weight:900;text-shadow:0 0 22px rgba(0,229,255,.35)}
+    h1{font-size:20px;letter-spacing:-.05em}
+    .status-pill{position:relative;border:1px solid rgba(56,189,248,.26);background:linear-gradient(135deg,rgba(14,165,233,.16),rgba(2,6,23,.68));color:#e0f2fe;padding:9px 12px 9px 28px;border-radius:999px;font-size:12px;white-space:nowrap;box-shadow:inset 0 1px 0 rgba(255,255,255,.10)}
+    .status-pill:before{content:"";position:absolute;left:11px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px rgba(34,197,94,.92)}
+    .status-pill.loading:before{background:var(--amber);animation:pulse 1.2s ease-in-out infinite}
+    .status-pill.demo:before{background:var(--amber)}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .screen{display:none}.screen.active{display:block;animation:fade .22s ease}@keyframes fade{from{opacity:.4;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .hero{position:relative;overflow:hidden;border:1px solid var(--stroke);background:linear-gradient(135deg,rgba(255,255,255,.09),transparent 18%),linear-gradient(145deg,rgba(15,23,42,.78),rgba(2,6,23,.76));border-radius:34px;padding:22px;box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(24px);margin-bottom:14px;isolation:isolate}
+    .hero:before{content:"";position:absolute;inset:0;z-index:-1;opacity:.28;background:linear-gradient(115deg,transparent 0 20%,rgba(0,229,255,.20) 21%,transparent 31%),repeating-linear-gradient(90deg,transparent 0 18px,rgba(56,189,248,.08) 19px,transparent 20px);mask-image:linear-gradient(130deg,black,transparent 76%)}
+    .hero:after{content:"";position:absolute;width:260px;height:260px;right:-116px;top:-116px;border-radius:50%;background:rgba(0,229,255,.14);filter:blur(5px);z-index:-1}
+    .hero h2{font-size:clamp(36px,11vw,64px);line-height:.88;letter-spacing:-.085em;margin:12px 0}
+    .hero h2 span{color:transparent;background:linear-gradient(90deg,#fff,#bae6fd 36%,#00e5ff 76%);-webkit-background-clip:text;background-clip:text}
+    .hero p{color:var(--muted);line-height:1.65;font-size:14px;max-width:640px}
+    .hero-actions{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
+    button,.button{border:0;color:white;font-weight:900;padding:13px 15px;border-radius:17px;background:linear-gradient(135deg,#00e5ff,#2563eb 58%,#1e1b4b);box-shadow:0 16px 42px rgba(37,99,235,.34),inset 0 1px 0 rgba(255,255,255,.24);cursor:pointer;font-size:14px;font-family:inherit}
+    .button.secondary,button.secondary{background:rgba(15,23,42,.66);border:1px solid rgba(125,211,252,.19);box-shadow:inset 0 1px 0 rgba(255,255,255,.08);color:#dbeafe}
+    .button.danger,button.danger{background:linear-gradient(135deg,rgba(239,68,68,.95),rgba(127,29,29,.9))}
+    .ticker{display:flex;gap:8px;overflow:auto;padding:3px 1px 15px;scrollbar-width:none}.ticker::-webkit-scrollbar{display:none}
+    .chip{flex:0 0 auto;padding:9px 11px;border:1px solid rgba(125,211,252,.16);background:rgba(2,6,23,.48);border-radius:999px;font-size:11px;color:#c7d2fe;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+    .chip.demo-chip{border-color:rgba(245,158,11,.28);background:rgba(245,158,11,.08);color:#fde68a}
+    .grid{display:grid;gap:12px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:12px}
+    .card{position:relative;overflow:hidden;border:1px solid var(--stroke-soft);background:linear-gradient(135deg,rgba(255,255,255,.065),transparent 34%),var(--panel);border-radius:var(--radius);padding:16px;box-shadow:0 18px 60px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(20px)}
+    .card:after{content:"";position:absolute;inset:auto 14px 0 14px;height:1px;background:linear-gradient(90deg,transparent,rgba(0,229,255,.55),transparent);opacity:.42}
+    .metric-label{color:var(--muted);font-size:11px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.12em;font-weight:800}
+    .metric-value{font-size:27px;font-weight:950;letter-spacing:-.07em}
+    .micro-trend{margin-top:7px;color:#cbd5e1;font-size:11px}
+    .up{color:var(--green)}.down{color:var(--red)}.blue{color:var(--blue-hot)}.amber{color:var(--amber)}
+    .section-title{display:flex;justify-content:space-between;align-items:end;margin:20px 2px 10px}
+    .section-title h3{font-size:17px;letter-spacing:-.045em}.section-title span{color:var(--muted);font-size:12px}
+    .page-head{margin:12px 2px 16px}.page-head h2{font-size:34px;line-height:.95;letter-spacing:-.075em;margin:7px 0}
+    .page-head p{color:var(--muted);line-height:1.55;font-size:14px}
+    .pick-card{position:relative;display:grid;gap:13px;border:1px solid rgba(125,211,252,.16);background:linear-gradient(135deg,rgba(255,255,255,.06),transparent 32%),linear-gradient(145deg,rgba(15,23,42,.76),rgba(2,6,23,.72));border-radius:26px;padding:16px;box-shadow:0 18px 60px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.08);overflow:hidden}
+    .pick-card:before{content:"";position:absolute;left:0;top:16px;bottom:16px;width:3px;border-radius:999px;background:linear-gradient(180deg,#00e5ff,#2563eb,transparent);box-shadow:0 0 18px rgba(0,229,255,.62)}
+    .pick-top,.pick-bottom{display:flex;justify-content:space-between;gap:12px;align-items:center}
+    .teams{font-size:16px;font-weight:950;letter-spacing:-.04em}
+    .market{color:var(--muted);font-size:12px;margin-top:5px;line-height:1.35}
+    .tag{padding:7px 10px;border-radius:999px;border:1px solid rgba(0,229,255,.25);color:#e0f2fe;background:linear-gradient(135deg,rgba(0,229,255,.12),rgba(37,99,235,.08));font-size:11px;font-weight:900;white-space:nowrap;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+    .tag.win{border-color:rgba(34,197,94,.28);background:rgba(34,197,94,.12);color:#dcfce7}
+    .tag.loss{border-color:rgba(239,68,68,.28);background:rgba(239,68,68,.12);color:#fee2e2}
+    .tag.pending{border-color:rgba(245,158,11,.28);background:rgba(245,158,11,.12);color:#fef3c7}
+    .confidence{height:8px;background:rgba(148,163,184,.16);border-radius:999px;overflow:hidden;border:1px solid rgba(255,255,255,.04)}
+    .confidence div{height:100%;border-radius:inherit;background:linear-gradient(90deg,#1d4ed8,#00e5ff,#e0f2fe);box-shadow:0 0 18px rgba(0,229,255,.48)}
+    .mini-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    .mini{border:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.54);border-radius:17px;padding:10px;box-shadow:inset 0 1px 0 rgba(255,255,255,.045)}
+    .mini span{display:block;color:var(--muted);font-size:9px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.11em;font-weight:900}
+    .mini strong{font-size:13px}
+    .detail-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+    .detail{border:1px solid rgba(148,163,184,.10);background:rgba(2,6,23,.44);border-radius:14px;padding:9px;text-align:center}
+    .detail span{display:block;color:var(--muted);font-size:9px;margin-bottom:4px;text-transform:uppercase;letter-spacing:.10em;font-weight:900}
+    .detail strong{font-size:12px}
+    .reasoning{color:#94a3b8;font-size:12px;line-height:1.6;font-style:italic;border-top:1px solid rgba(148,163,184,.10);padding-top:10px}
+    .chart{height:154px;display:flex;align-items:end;gap:8px;padding-top:10px;position:relative}
+    .chart:before{content:"";position:absolute;inset:16px 0 24px;background:repeating-linear-gradient(to top,rgba(148,163,184,.10) 0 1px,transparent 1px 32px);z-index:0}
+    .bar{position:relative;z-index:1;flex:1;min-width:14px;border-radius:999px 999px 8px 8px;background:linear-gradient(180deg,#e0f2fe,#00e5ff 32%,#1d4ed8);opacity:.94;box-shadow:0 10px 28px rgba(0,229,255,.20)}
+    .quality-row,.history-row{display:flex;justify-content:space-between;gap:10px;padding:13px 0;border-bottom:1px solid rgba(148,163,184,.12);color:#dbeafe;font-size:14px}
+    .quality-row:last-child,.history-row:last-child{border-bottom:0}
+    .radar{height:188px;display:grid;place-items:center;margin-bottom:4px}
+    .radar-core{width:148px;height:148px;border-radius:50%;background:radial-gradient(circle,rgba(0,229,255,.34) 0 4px,transparent 5px),repeating-radial-gradient(circle,rgba(125,211,252,.20) 0 1px,transparent 1px 24px),conic-gradient(from 30deg,rgba(0,229,255,0),rgba(0,229,255,.44),rgba(37,99,235,.05),rgba(0,229,255,0));border:1px solid rgba(125,211,252,.22);box-shadow:inset 0 0 32px rgba(0,229,255,.12),0 0 44px rgba(37,99,235,.14);position:relative}
+    .radar-core:after{content:"";position:absolute;inset:0;display:grid;place-items:center;font-size:42px;font-weight:950;letter-spacing:-.08em}
+    .radar-core.grade-good{background:radial-gradient(circle,rgba(34,197,94,.34) 0 4px,transparent 5px),repeating-radial-gradient(circle,rgba(134,239,172,.20) 0 1px,transparent 1px 24px),conic-gradient(from 30deg,rgba(34,197,94,0),rgba(34,197,94,.44),rgba(22,101,52,.05),rgba(34,197,94,0));border-color:rgba(134,239,172,.28);box-shadow:inset 0 0 32px rgba(34,197,94,.12),0 0 44px rgba(34,197,94,.16)}
+    .radar-core.grade-warn{background:radial-gradient(circle,rgba(245,158,11,.34) 0 4px,transparent 5px),repeating-radial-gradient(circle,rgba(252,211,77,.20) 0 1px,transparent 1px 24px),conic-gradient(from 30deg,rgba(245,158,11,0),rgba(245,158,11,.44),rgba(120,53,15,.05),rgba(245,158,11,0));border-color:rgba(252,211,77,.28);box-shadow:inset 0 0 32px rgba(245,158,11,.12),0 0 44px rgba(245,158,11,.16)}
+    .radar-core.grade-bad{background:radial-gradient(circle,rgba(239,68,68,.34) 0 4px,transparent 5px),repeating-radial-gradient(circle,rgba(252,165,165,.20) 0 1px,transparent 1px 24px),conic-gradient(from 30deg,rgba(239,68,68,0),rgba(239,68,68,.44),rgba(127,29,29,.05),rgba(239,68,68,0));border-color:rgba(252,165,165,.28);box-shadow:inset 0 0 32px rgba(239,68,68,.12),0 0 44px rgba(239,68,68,.16)}
+    .grade-letter{position:relative;z-index:2;font-size:44px;font-weight:950;letter-spacing:-.08em;text-shadow:0 0 22px currentColor}
+    .form-grid{display:grid;gap:10px}
+    .field{display:grid;gap:6px}.field label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.12em;font-weight:900}
+    .field input,.field select{width:100%;padding:13px 12px;border-radius:16px;border:1px solid rgba(125,211,252,.16);background:rgba(2,6,23,.92);color:white;outline:none;font-family:inherit;font-size:14px;appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,#7dd3fc 50%),linear-gradient(135deg,#7dd3fc 50%,transparent 50%);background-position:calc(100% - 20px) 50%,calc(100% - 15px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:36px}select option{background:#0b1220;color:#e2e8f0;padding:8px}select optgroup{background:#0b1220;color:#7dd3fc;font-weight:800}#forgotBtn:active{opacity:.7}.auth-tab{appearance:none;-webkit-tap-highlight-color:transparent;cursor:pointer}
+    .field input::placeholder{color:#64748b}
+    .filter-note{color:#94a3b8;font-size:12px;line-height:1.45;margin-top:10px}
+    .action-row{display:flex;gap:8px;flex-wrap:wrap}
+    .empty-state{text-align:center;padding:48px 24px;color:var(--muted)}
+    .empty-state .empty-icon{font-size:44px;margin-bottom:16px;opacity:.5}
+    .empty-state h3{font-size:18px;margin-bottom:8px;color:var(--text)}
+    .empty-state p{font-size:14px;line-height:1.6;max-width:340px;margin:0 auto}
+    .demo-banner{display:none;background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.06));border:1px solid rgba(245,158,11,.28);border-radius:16px;padding:12px 16px;margin-bottom:14px;color:#fde68a;font-size:12px;line-height:1.5}
+    .demo-banner.visible{display:block}
+    .skeleton{background:linear-gradient(90deg,rgba(148,163,184,.08) 25%,rgba(148,163,184,.15) 50%,rgba(148,163,184,.08) 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:12px;height:22px;margin-bottom:8px}
+    @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+    .bottom-nav{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);width:min(calc(100% - 24px),680px);display:grid;grid-template-columns:repeat(6,1fr);gap:5px;border:1px solid rgba(125,211,252,.18);background:linear-gradient(135deg,rgba(15,23,42,.78),rgba(2,6,23,.90));backdrop-filter:blur(24px);padding:8px;border-radius:26px;box-shadow:0 24px 80px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.08);z-index:10}
+    .nav-item{display:grid;place-items:center;gap:2px;color:var(--muted);font-size:10px;text-decoration:none;padding:8px 4px;border-radius:17px;font-weight:800;border:0;background:transparent;box-shadow:none;cursor:pointer;font-family:inherit}
+    .nav-item.active{color:white;background:linear-gradient(135deg,rgba(0,229,255,.17),rgba(37,99,235,.10));border:1px solid rgba(0,229,255,.13);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+    .nav-icon{font-size:16px}
+    .account-card{display:grid;gap:16px}
+    .account-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid rgba(148,163,184,.10)}
+    .account-row:last-child{border-bottom:0}
+    .account-label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;margin-bottom:4px}
+    .account-value{font-size:14px;font-weight:700}
+    @media (min-width:760px){.app{padding:30px}.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}.desktop-grid{grid-template-columns:1.2fr .8fr;align-items:start}.pick-card{padding:18px}.orb{right:30px;top:92px;width:280px;height:280px}}
+  </style>
+</head>
+<body>
+  <div class="ambient-line"></div>
+
+  <!-- ── LOGIN SCREEN ── -->
+  <div id="authScreen">
+    <div class="auth-box">
+      <div class="auth-logo">
+        <div class="logo">ME</div>
+        <div>
+          <div class="eyebrow">MLB Neural Forecast System</div>
+          <h1>Edge Tracker</h1>
+        </div>
+      </div>
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')" type="button">Sign In</button>
+        <button class="auth-tab" id="tabSignup" onclick="switchAuthTab('signup')" type="button">Create Account</button>
+      </div>
+      <form class="auth-form" onsubmit="handleAuth();return false;">
+        <div class="auth-error" id="authError"></div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <button type="submit" id="authSubmit">Sign In</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+          <button type="button" id="forgotBtn" onclick="handleForgotPassword()" style="background:none;border:0;color:#7dd3fc;font-size:12px;font-weight:700;padding:6px 4px;cursor:pointer;font-family:inherit;box-shadow:none">Forgot password?</button>
+        </div>
+        <p class="auth-note" id="authNote">Sign in to view live MLB model predictions, edge analytics, and performance tracking.</p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── MAIN APP ── -->
+  <div id="mainApp">
+    <main class="app">
+      <div class="orb"></div>
+      <header class="topbar">
+        <div class="brand"><div class="logo">ME</div><div><div class="eyebrow">MLB Neural Forecast System</div><h1>Edge Tracker</h1></div></div>
+        <div class="status-pill loading" id="statusPill">Loading…</div>
+      </header>
+
+      <div class="demo-banner" id="demoBanner">
+        ⚠️ <strong>Sample data shown</strong> — Supabase is unreachable or has no predictions yet. These are demo picks for layout preview only.
+      </div>
+
+      <section id="dashboard" class="screen active">
+        <section class="hero">
+          <div class="eyebrow">Futuristic Command Center</div>
+          <h2>Track every <span>edge</span> like a trading desk.</h2>
+          <p>Premium dark analytics for today's MLB predictions, ROI, win rate, confidence tiers, and long-term model quality.</p>
+          <div class="hero-actions">
+            <button onclick="showScreen('slate')">Open Today's Slate</button>
+            <button class="secondary" onclick="showScreen('analytics')">View Performance</button>
+          </div>
+        </section>
+        <section class="ticker" id="ticker"></section>
+        <section class="grid metrics" id="metrics"></section>
+        <div class="grid desktop-grid">
+          <section>
+            <div class="section-title"><h3>Today's Slate</h3><span id="todayLabel">Live predictions</span></div>
+            <div class="grid" id="dashboardSlate"></div>
+          </section>
+          <aside>
+            <div class="section-title"><h3>Model Quality</h3><span id="mqUpdated">Signal health</span></div>
+            <div class="card">
+              <div class="radar"><div class="radar-core" id="radarCore"><span class="grade-letter" id="gradeLetter">—</span></div></div>
+              <div class="quality-row"><span>Calibration Error</span><strong id="mqCal" class="amber">Loading…</strong></div>
+              <div class="quality-row"><span>Brier / Log Loss</span><strong id="mqBrier" class="blue">Loading…</strong></div>
+              <div class="quality-row"><span>ROI (30d)</span><strong id="mqRoi" class="amber">Loading…</strong></div>
+              <div class="quality-row"><span>Best / Worst Market</span><strong id="mqMarkets" class="blue">Loading…</strong></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="slate" class="screen">
+        <div class="page-head">
+          <div class="eyebrow">Today's Slate</div>
+          <h2>Model predictions</h2>
+          <p>Today's picks generated by the MLB neural forecast model.</p>
+        </div>
+        <div class="grid" id="slateList"></div>
+      </section>
+
+      <section id="results" class="screen">
+        <div class="page-head">
+          <div class="eyebrow">Results</div>
+          <h2>Settled picks</h2>
+          <p>Finalized outcomes and profit/loss from the model's settled predictions.</p>
+        </div>
+        <div class="grid" id="resultsList"></div>
+      </section>
+
+      <section id="analytics" class="screen">
+        <div class="page-head"><div class="eyebrow">Performance Analytics</div><h2>ROI engine</h2><p>Tracks profit, win rate, confidence tiers, market performance, and model edge over time.</p></div>
+        <div class="card" style="margin-bottom:12px"><h3>Analytics Filters</h3><div class="form-grid" style="margin-top:12px;grid-template-columns:repeat(2,1fr)">
+          <div class="field"><label>From Date</label><input id="filterFrom" type="date" onchange="render()"></div>
+          <div class="field"><label>To Date</label><input id="filterTo" type="date" onchange="render()"></div>
+          <div class="field"><label>Market</label><select id="filterMarket" onchange="render()"><option value="All">All Markets</option><option>Moneyline</option><option>Total</option><option>F5 Winner</option><option>F5 Handicap</option></select></div>
+          <div class="field"><label>Confidence</label><select id="filterConfidence" onchange="render()"><option value="All">All Confidence</option><option>High</option><option>Medium</option><option>Value</option></select></div>
+          <div class="field"><label>Status</label><select id="filterStatus" onchange="render()"><option value="All">All Statuses</option><option value="pending">Pending</option><option value="win">Win</option><option value="loss">Loss</option><option value="push">Push</option></select></div>
+          <button class="secondary" onclick="clearFilters()">Clear Filters</button>
+        </div><div class="filter-note" id="filterSummary">Showing all picks.</div></div>
+        <section class="grid metrics" id="analyticsMetrics"></section>
+        <div class="grid desktop-grid">
+          <section><div class="section-title"><h3>Profit Curve</h3><span>Filtered view</span></div><div class="card"><div class="chart" id="profitChart"></div></div></section>
+          <aside><div class="section-title"><h3>Market Split</h3><span>Filtered settled picks</span></div><div class="card" id="marketSplit"></div></aside>
+        </div>
+      </section>
+
+      <section id="history" class="screen">
+        <div class="page-head"><div class="eyebrow">History Explorer</div><h2>Prediction archive</h2><p>All historical predictions and outcomes from Supabase.</p></div>
+        <div class="card" style="margin-bottom:12px"><h3>Current Filter View</h3><div class="filter-note" id="historyFilterSummary">Showing all picks.</div><div class="action-row" style="margin-top:12px"><button onclick="showScreen('analytics')">Change Filters</button><button class="secondary" onclick="clearFilters();showScreen('history')">Clear Filters</button></div></div>
+        <div class="card" id="historyRows"></div>
+      </section>
+
+      <section id="account" class="screen">
+        <div class="page-head"><div class="eyebrow">Account</div><h2>Your profile</h2><p>Manage your session and view connection status.</p></div>
+        <div class="grid desktop-grid">
+          <div class="card account-card">
+            <div class="account-row">
+              <div><div class="account-label">Signed in as</div><div class="account-value" id="accountEmail">—</div></div>
+            </div>
+            <div class="account-row">
+              <div><div class="account-label">Data source</div><div class="account-value" id="accountSource">Supabase</div></div>
+            </div>
+            <div class="account-row">
+              <div><div class="account-label">Predictions loaded</div><div class="account-value" id="accountCount">—</div></div>
+            </div>
+            <div class="account-row">
+              <div><div class="account-label">Last refreshed</div><div class="account-value" id="accountRefresh">—</div></div>
+            </div>
+            <button onclick="refreshData()" style="margin-top:8px">Refresh Data</button>
+            <button class="secondary" onclick="handleSignOut()" style="margin-top:4px">Sign Out</button>
+          </div>
+          <div class="card">
+            <h3>System Status</h3>
+            <div class="quality-row"><span>Supabase Auth</span><strong class="up" id="sbAuthStatus">Connected</strong></div>
+            <div class="quality-row"><span>Predictions Table</span><strong class="blue" id="sbPredStatus">—</strong></div>
+            <div class="quality-row"><span>Results Table</span><strong class="blue" id="sbResStatus">—</strong></div>
+            <div class="quality-row"><span>Access Level</span><strong class="amber">Read-Only</strong></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="App navigation">
+      <button class="nav-item active" data-screen="dashboard"><span class="nav-icon">⌁</span><span>Dash</span></button>
+      <button class="nav-item" data-screen="slate"><span class="nav-icon">◆</span><span>Slate</span></button>
+      <button class="nav-item" data-screen="results"><span class="nav-icon">✓</span><span>Results</span></button>
+      <button class="nav-item" data-screen="analytics"><span class="nav-icon">▥</span><span>Stats</span></button>
+      <button class="nav-item" data-screen="history"><span class="nav-icon">◷</span><span>History</span></button>
+      <button class="nav-item" data-screen="account"><span class="nav-icon">👤</span><span>Account</span></button>
+    </nav>
+  </div>
+
+  <script>
+    // ── SUPABASE INIT ──
+    const SUPABASE_URL = 'https://kgrwiqynymcthqumrfey.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_SlmnWI21-SuQAoEMPqN78g_3Cl4lo-s';
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' } });
+
+    // ── SAMPLE / FALLBACK DATA ──
+    const samplePicks = [
+      { id:'s1', modelVersion:'V4.1', createdAt:'2026-06-26T09:00:00Z', date:'2026-06-26', startTime:'7:10 PM', awayTeam:'Red Sox', homeTeam:'Yankees', venue:'Yankee Stadium', awayStarter:'TBD', homeStarter:'G. Cole', pick:'Yankees ML', market:'Moneyline', lineValue:null, odds:1.80, fairProbability:58.1, predictedProbability:62.4, adjustedEdge:6.2, ev:11.8, stake:1.0, confidenceTier:'High', reasoning:'Model shows home pitching and bullpen edge.', status:'pending', finalAwayRuns:null, finalHomeRuns:null, profitLossUnits:null },
+      { id:'s2', modelVersion:'V4.1', createdAt:'2026-06-26T09:00:00Z', date:'2026-06-26', startTime:'9:40 PM', awayTeam:'Dodgers', homeTeam:'Padres', venue:'Petco Park', awayStarter:'TBD', homeStarter:'TBD', pick:'Over 8.5', market:'Total', lineValue:8.5, odds:1.91, fairProbability:53.4, predictedProbability:56.9, adjustedEdge:3.8, ev:8.7, stake:0.75, confidenceTier:'Medium', reasoning:'Projected scoring environment above market total.', status:'pending', finalAwayRuns:null, finalHomeRuns:null, profitLossUnits:null },
+      { id:'s3', modelVersion:'V4.1', createdAt:'2026-06-25T09:00:00Z', date:'2026-06-25', startTime:'8:15 PM', awayTeam:'Cubs', homeTeam:'Cardinals', venue:'Busch Stadium', awayStarter:'TBD', homeStarter:'TBD', pick:'Cubs ML', market:'Moneyline', lineValue:null, odds:1.74, fairProbability:59.0, predictedProbability:61.5, adjustedEdge:4.1, ev:7.0, stake:1.0, confidenceTier:'High', reasoning:'Sample settled pick for testing analytics.', status:'win', finalAwayRuns:5, finalHomeRuns:3, profitLossUnits:0.74 },
+      { id:'s4', modelVersion:'V4.1', createdAt:'2026-06-25T09:00:00Z', date:'2026-06-25', startTime:'8:05 PM', awayTeam:'Astros', homeTeam:'Rangers', venue:'Globe Life Field', awayStarter:'TBD', homeStarter:'TBD', pick:'Under 9.0', market:'Total', lineValue:9.0, odds:1.88, fairProbability:54.2, predictedProbability:55.8, adjustedEdge:2.7, ev:5.0, stake:1.0, confidenceTier:'Medium', reasoning:'Sample settled pick for testing analytics.', status:'loss', finalAwayRuns:6, finalHomeRuns:5, profitLossUnits:-1.0 },
+      { id:'s5', modelVersion:'V4.1', createdAt:'2026-06-24T09:00:00Z', date:'2026-06-24', startTime:'9:45 PM', awayTeam:'Giants', homeTeam:'D-backs', venue:'Chase Field', awayStarter:'TBD', homeStarter:'TBD', pick:'Giants +1.5', market:'Run Line', lineValue:1.5, odds:1.67, fairProbability:61.0, predictedProbability:63.4, adjustedEdge:3.4, ev:6.1, stake:0.75, confidenceTier:'Medium', reasoning:'Sample settled pick for testing analytics.', status:'win', finalAwayRuns:4, finalHomeRuns:3, profitLossUnits:0.50 },
+    ];
+
+    // ── STATE ──
+    let picks = [];
+    let modelMetrics = null;
+    let isDemo = false;
+    let currentUser = null;
+    let lastRefreshed = null;
+    let authMode = 'login';
+    const AUTO_REFRESH_MS = 3 * 60 * 1000;
+
+    // ── AUTH UI ──
+    function switchAuthTab(mode) {
+      authMode = mode;
+      document.getElementById('tabLogin').classList.toggle('active', mode === 'login');
+      document.getElementById('tabSignup').classList.toggle('active', mode === 'signup');
+      document.getElementById('authSubmit').textContent = mode === 'login' ? 'Sign In' : 'Create Account';
+      document.getElementById('authNote').textContent = mode === 'login'
+        ? 'Sign in to view live MLB model predictions, edge analytics, and performance tracking.'
+        : 'Create a free account to track every model pick.';
+      clearAuthError();
+      const p = document.getElementById('authPassword'); if (p) p.value = '';
+    }
+
+    function showAuthError(msg) {
+      const el = document.getElementById('authError');
+      el.textContent = msg;
+      el.classList.add('visible');
+    }
+    function clearAuthError() {
+      document.getElementById('authError').classList.remove('visible');
+    }
+
+    async function handleAuth() {
+      clearAuthError();
+      const emailEl = document.getElementById('authEmail');
+      const passEl = document.getElementById('authPassword');
+      const email = (emailEl.value || '').trim();
+      const password = passEl.value || '';
+      const btn = document.getElementById('authSubmit');
+      if (!email || !password) { showAuthError('Please enter your email and password.'); return; }
+      btn.textContent = authMode === 'login' ? 'Signing in…' : 'Creating account…';
+      btn.disabled = true;
+      let errMsg = null;
+      try {
+        let result;
+        if (authMode === 'login') {
+          result = await sb.auth.signInWithPassword({ email, password });
+        } else {
+          result = await sb.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } });
+        }
+        if (result && result.error) {
+          errMsg = result.error.message || String(result.error);
+        } else if (authMode === 'signup' && result && !result.data.session) {
+          errMsg = 'Account created! Check your email (and spam folder) for a confirmation link, then sign in.';
+          setTimeout(() => { switchAuthTab('login'); passEl.value=''; emailEl.value = email; }, 2000);
+        }
+      } catch(e) {
+        errMsg = (e && e.message) ? e.message : 'Connection error. Please try again.';
+      } finally {
+        btn.textContent = authMode === 'login' ? 'Sign In' : 'Create Account';
+        btn.disabled = false;
+        if (errMsg) { showAuthError(errMsg); passEl.value=''; passEl.focus(); }
+      }
+    }
+
+    async function handleForgotPassword() {
+      clearAuthError();
+      const email = (document.getElementById('authEmail').value || '').trim();
+      if (!email) { showAuthError('Enter your email first, then tap Forgot password.'); return; }
+      const btn = document.getElementById('forgotBtn');
+      const origText = btn.textContent;
+      btn.textContent = 'Sending…'; btn.disabled = true;
+      try {
+        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+        if (error) { showAuthError(error.message); }
+        else { showAuthError('Password reset email sent! Check your inbox.'); }
+      } catch(e) {
+        showAuthError('Could not send reset email — check your connection.');
+      } finally {
+        btn.textContent = origText; btn.disabled = false;
+      }
+    }
+
+    async function handleSignOut() {
+      await sb.auth.signOut();
+      showAuthUI();
+    }
+
+    function showAuthUI() {
+      document.getElementById('authScreen').classList.remove('hidden');
+      document.getElementById('mainApp').classList.remove('visible');
+    }
+
+    function showMainApp(user) {
+      currentUser = user;
+      document.getElementById('authScreen').classList.add('hidden');
+      document.getElementById('mainApp').classList.add('visible');
+      document.getElementById('accountEmail').textContent = user.email;
+      refreshData();
+    }
+
+    // ── DATA LOADING ──
+    function mapPrediction(row, resultsMap) {
+      const r = resultsMap[row.id] || null;
+      const tier = row.confidence_tier || 'Medium';
+      const status = r ? r.result_status : (row.status || 'pending');
+      return {
+        id: row.id,
+        modelVersion: row.model_version || 'V4',
+        createdAt: row.created_at,
+        date: row.game_date,
+        startTime: row.start_time || 'TBD',
+        awayTeam: row.away_team || 'Away',
+        homeTeam: row.home_team || 'Home',
+        venue: row.venue || 'Venue TBD',
+        awayStarter: row.away_starter || 'TBD',
+        homeStarter: row.home_starter || 'TBD',
+        pick: row.selection || '—',
+        market: row.market_type || 'Moneyline',
+        lineValue: row.line_value ?? null,
+        odds: Number(row.odds_decimal) || 1.0,
+        fairProbability: Number(row.fair_probability) || 0,
+        predictedProbability: Number(row.predicted_probability) || 0,
+        adjustedEdge: Number(row.adjusted_edge) || 0,
+        ev: Number(row.ev) || 0,
+        stake: Number(row.stake_units) || 1,
+        confidenceTier: tier,
+        reasoning: row.reasoning || '',
+        status: status,
+        finalAwayRuns: r ? r.final_away_runs : null,
+        finalHomeRuns: r ? r.final_home_runs : null,
+        profitLossUnits: r ? Number(r.profit_loss_units) : null,
+      };
+    }
+
+    function gradeClass(grade) {
+      if (!grade) return '';
+      const g = grade.toUpperCase().charAt(0);
+      if (g === 'A' || g === 'B') return 'grade-good';
+      if (g === 'C') return 'grade-warn';
+      return 'grade-bad';
+    }
+    function gradeColor(grade) {
+      if (!grade) return 'blue';
+      const g = grade.toUpperCase().charAt(0);
+      if (g === 'A' || g === 'B') return 'up';
+      if (g === 'C') return 'amber';
+      return 'down';
+    }
+    function fmtPct(v, digits=1) {
+      if (v === null || v === undefined) return '—';
+      return (v >= 0 ? '+' : '') + Number(v).toFixed(digits) + '%';
+    }
+    function fmtNum(v, digits=3) {
+      if (v === null || v === undefined) return '—';
+      return Number(v).toFixed(digits);
+    }
+    function calibrationLabel(e) {
+      if (e === null || e === undefined) return '—';
+      if (e < 0.05) return 'Excellent (' + fmtNum(e, 3) + ')';
+      if (e < 0.10) return 'Good (' + fmtNum(e, 3) + ')';
+      if (e < 0.15) return 'Fair (' + fmtNum(e, 3) + ')';
+      return 'Needs work (' + fmtNum(e, 3) + ')';
+    }
+    function renderModelQuality() {
+      const letterEl = document.getElementById('gradeLetter');
+      const coreEl = document.getElementById('radarCore');
+      const calEl = document.getElementById('mqCal');
+      const brierEl = document.getElementById('mqBrier');
+      const roiEl = document.getElementById('mqRoi');
+      const marketsEl = document.getElementById('mqMarkets');
+      const updatedEl = document.getElementById('mqUpdated');
+      if (!letterEl) return;
+      if (!modelMetrics) {
+        letterEl.textContent = '—';
+        coreEl.className = 'radar-core';
+        calEl.textContent = 'No data yet';
+        calEl.className = 'amber';
+        brierEl.textContent = '— / —';
+        brierEl.className = 'blue';
+        roiEl.textContent = '—';
+        roiEl.className = 'blue';
+        marketsEl.textContent = 'Awaiting data';
+        marketsEl.className = 'blue';
+        if (updatedEl) updatedEl.textContent = 'Signal health';
+        return;
+      }
+      const m = modelMetrics;
+      const cls = gradeClass(m.metric_grade);
+      const gc = gradeColor(m.metric_grade);
+      letterEl.textContent = m.metric_grade || '—';
+      letterEl.className = 'grade-letter ' + gc;
+      coreEl.className = 'radar-core ' + cls;
+
+      const calE = Number(m.calibration_error);
+      calEl.textContent = calibrationLabel(m.calibration_error);
+      calEl.className = calE < 0.10 ? 'up' : calE < 0.15 ? 'amber' : 'down';
+
+      brierEl.textContent = fmtNum(m.brier_score, 3) + ' / ' + fmtNum(m.log_loss, 3);
+      brierEl.className = (m.brier_score !== null && m.brier_score < 0.24) ? 'up'
+                       : (m.brier_score !== null && m.brier_score < 0.27) ? 'amber' : 'blue';
+
+      roiEl.textContent = fmtPct(m.roi_30d, 1) + ' (all: ' + fmtPct(m.roi_all_time, 1) + ')';
+      roiEl.className = (m.roi_all_time !== null && m.roi_all_time > 0) ? 'up'
+                      : (m.roi_all_time !== null && m.roi_all_time > -5) ? 'amber' : 'down';
+
+      const best = m.best_market || '—';
+      const worst = m.worst_market || '—';
+      marketsEl.textContent = best + ' ▲ / ' + worst + ' ▼';
+      marketsEl.className = 'blue';
+
+      if (updatedEl && m.measured_at) {
+        const d = new Date(m.measured_at);
+        updatedEl.textContent = 'Updated ' + d.toLocaleString();
+      }
+    }
+
+    async function fetchModelMetrics() {
+      try {
+        const { data, error } = await sb
+          .from('model_metrics')
+          .select('*')
+          .order('measured_at', { ascending: false })
+          .limit(1);
+        if (error) throw error;
+        modelMetrics = (data && data.length) ? data[0] : null;
+      } catch(e) {
+        console.warn('Failed to fetch model_metrics:', e.message);
+        modelMetrics = null;
+      }
+      renderModelQuality();
+    }
+
+    async function fetchSupabaseData() {
+      const pill = document.getElementById('statusPill');
+      pill.textContent = 'Loading…';
+      pill.className = 'status-pill loading';
+
+      try {
+        const [predRes, resRes] = await Promise.all([
+          sb.from('predictions').select('*').is('deleted_at', null).eq('archived', false).order('game_date', { ascending: false }).order('start_time', { ascending: true }),
+          sb.from('results').select('*')
+        ]);
+
+        if (predRes.error) throw predRes.error;
+
+        const resultsMap = {};
+        if (!resRes.error && resRes.data) {
+          for (const r of resRes.data) { resultsMap[r.prediction_id] = r; }
+        }
+
+        const mapped = (predRes.data || []).map(row => mapPrediction(row, resultsMap));
+
+        if (mapped.length === 0) {
+          picks = [];
+          isDemo = false;
+          setStatus('live', 'No Predictions Yet');
+        } else {
+          picks = mapped;
+          isDemo = false;
+          setStatus('live', 'Live');
+        }
+
+        const sbPredOk = !predRes.error;
+        const sbResOk = !resRes.error;
+        document.getElementById('sbPredStatus').textContent = sbPredOk ? `${predRes.data?.length ?? 0} rows` : 'Error';
+        document.getElementById('sbPredStatus').className = sbPredOk ? 'blue' : 'down';
+        document.getElementById('sbResStatus').textContent = sbResOk ? `${resRes.data?.length ?? 0} rows` : 'Error';
+        document.getElementById('sbResStatus').className = sbResOk ? 'blue' : 'down';
+
+      } catch(e) {
+        console.warn('Supabase fetch failed, using sample data:', e.message);
+        picks = samplePicks;
+        isDemo = true;
+        setStatus('demo', 'Demo Data');
+        document.getElementById('sbPredStatus').textContent = 'Unavailable';
+        document.getElementById('sbPredStatus').className = 'amber';
+        document.getElementById('sbResStatus').textContent = 'Unavailable';
+        document.getElementById('sbResStatus').className = 'amber';
+      }
+
+      lastRefreshed = new Date();
+      document.getElementById('accountCount').textContent = picks.length + ' predictions';
+      document.getElementById('accountRefresh').textContent = lastRefreshed.toLocaleTimeString();
+      document.getElementById('accountSource').textContent = isDemo ? 'Sample Data (Fallback)' : 'Supabase';
+      document.getElementById('demoBanner').classList.toggle('visible', isDemo);
+
+      render();
+      fetchModelMetrics();
+
+      // Auto-refresh every 3 minutes
+      if (window.__mqRefreshTimer) clearInterval(window.__mqRefreshTimer);
+      window.__mqRefreshTimer = setInterval(() => {
+        if (currentUser) refreshData();
+      }, AUTO_REFRESH_MS);
+    }
+
+    function setStatus(type, label) {
+      const pill = document.getElementById('statusPill');
+      pill.textContent = label;
+      pill.className = 'status-pill' + (type === 'demo' ? ' demo' : '');
+    }
+
+    async function refreshData() {
+      await fetchSupabaseData();
+    }
+
+    // ── HELPERS ──
+    function todayStr() {
+      return new Date().toISOString().slice(0, 10);
+    }
+    function todayPicks() { return picks.filter(p => p.date === todayStr()); }
+    function settledPicks(source) { return (source || picks).filter(p => p.status !== 'pending'); }
+
+    function profit(p) {
+      if (p.profitLossUnits !== null && p.profitLossUnits !== undefined) return p.profitLossUnits;
+      if (p.status === 'win') return p.stake * (p.odds - 1);
+      if (p.status === 'loss') return -p.stake;
+      if (p.status === 'push') return 0;
+      return 0;
+    }
+    function fmtUnits(n) { return (n >= 0 ? '+' : '') + Number(n).toFixed(2) + 'u'; }
+    function lineLabel(p) { return p.lineValue === null || p.lineValue === undefined ? 'N/A' : p.lineValue; }
+    function scoreLabel(p) { return (p.finalAwayRuns === null || p.finalHomeRuns === null) ? 'Awaiting final' : `${p.awayTeam} ${p.finalAwayRuns} — ${p.homeTeam} ${p.finalHomeRuns}`; }
+    function fieldValue(id) { return (document.getElementById(id)?.value || '').trim(); }
+    function confidencePct(tier) { return tier === 'High' ? 82 : tier === 'Medium' ? 68 : 59; }
+    function confidenceLabel(tier) { return tier === 'High' ? 'High Signal' : tier === 'Medium' ? 'Medium Signal' : 'Value Signal'; }
+
+    function calcMetrics(source) {
+      const s = settledPicks(source);
+      const graded = s.filter(p => p.status === 'win' || p.status === 'loss');
+      const wins = s.filter(p => p.status === 'win').length;
+      const pushes = s.filter(p => p.status === 'push').length;
+      const totalStake = s.reduce((a, p) => a + p.stake, 0);
+      const pl = s.reduce((a, p) => a + profit(p), 0);
+      const pending = (source || picks).filter(p => p.status === 'pending').length;
+      return { settled: s.length, graded: graded.length, pending, wins, pushes, winRate: graded.length ? wins / graded.length * 100 : 0, stake: totalStake, pl, roi: totalStake ? pl / totalStake * 100 : 0 };
+    }
+
+    function metricCard(label, value, sub, cls) {
+      return `<article class="card"><div class="metric-label">${label}</div><div class="metric-value ${cls||'blue'}">${value}</div><div class="micro-trend">${sub}</div></article>`;
+    }
+
+    function pickCard(p) {
+      const statusClass = p.status === 'win' ? 'win' : p.status === 'loss' ? 'loss' : 'pending';
+      const statusText = p.status === 'pending' ? confidenceLabel(p.confidenceTier) : p.status.toUpperCase();
+      const pct = confidencePct(p.confidenceTier);
+      const edge = Number(p.adjustedEdge || 0).toFixed(1);
+      const evVal = Number(p.ev || 0).toFixed(1);
+      return `<article class="pick-card">
+        <div class="pick-top">
+          <div>
+            <div class="teams">${p.awayTeam} vs ${p.homeTeam}</div>
+            <div class="market">${p.startTime} • ${p.venue} • Model ${p.modelVersion}</div>
+            <div class="market">Pick: ${p.pick} • Market: ${p.market}${p.lineValue !== null ? ' • Line: ' + p.lineValue : ''}</div>
+          </div>
+          <div class="tag ${statusClass}">${statusText}</div>
+        </div>
+        <div class="confidence"><div style="width:${pct}%"></div></div>
+        <div class="mini-stats">
+          <div class="mini"><span>Decimal Odds</span><strong>${Number(p.odds).toFixed(2)}</strong></div>
+          <div class="mini"><span>Stake</span><strong>${p.stake}u</strong></div>
+          <div class="mini"><span>Adj Edge</span><strong class="up">${(Number(p.adjustedEdge)||0)>=0?:}${edge}%</strong></div>
+        </div>
+        <div class="detail-grid">
+          <div class="detail"><span>Pred Prob</span><strong>${(Number(p.predictedProbability)||0).toFixed(1)}%</strong></div>
+          <div class="detail"><span>Fair Prob</span><strong>${(Number(p.fairProbability)||0).toFixed(1)}%</strong></div>
+          <div class="detail"><span>EV</span><strong class="blue">${(Number(p.ev)||0)>=0?'+':''}${evVal}%</strong></div>
+          <div class="detail"><span>Final Score</span><strong>${scoreLabel(p)}</strong></div>
+        </div>
+        ${p.reasoning ? `<div class="reasoning">${p.reasoning}</div>` : ''}
+      </article>`;
+    }
+
+    function emptyState(icon, title, msg) {
+      return `<div class="empty-state"><div class="empty-icon">${icon}</div><h3>${title}</h3><p>${msg}</p></div>`;
+    }
+
+    // ── FILTERS ──
+    function filteredPicks() {
+      const from = fieldValue('filterFrom');
+      const to = fieldValue('filterTo');
+      const market = fieldValue('filterMarket') || 'All';
+      const confidence = fieldValue('filterConfidence') || 'All';
+      const status = fieldValue('filterStatus') || 'All';
+      return picks.filter(p => {
+        if (from && p.date < from) return false;
+        if (to && p.date > to) return false;
+        if (market !== 'All' && p.market !== market) return false;
+        if (confidence !== 'All' && p.confidenceTier !== confidence) return false;
+        if (status !== 'All' && p.status !== status) return false;
+        return true;
+      });
+    }
+    function filterText(list) {
+      const from = fieldValue('filterFrom'), to = fieldValue('filterTo'),
+            market = fieldValue('filterMarket') || 'All',
+            confidence = fieldValue('filterConfidence') || 'All',
+            status = fieldValue('filterStatus') || 'All';
+      const parts = [];
+      if (from) parts.push(`from ${from}`); if (to) parts.push(`to ${to}`);
+      if (market !== 'All') parts.push(market); if (confidence !== 'All') parts.push(`${confidence} confidence`);
+      if (status !== 'All') parts.push(status);
+      return `${list.length} pick${list.length === 1 ? '' : 's'} shown${parts.length ? ' • ' + parts.join(' • ') : ' • all data'}.`;
+    }
+    function clearFilters() {
+      ['filterFrom','filterTo'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+      ['filterMarket','filterConfidence','filterStatus'].forEach(id => { const el = document.getElementById(id); if(el) el.selectedIndex = 0; });
+      render();
+    }
+
+    // ── RENDER ──
+    function renderMetrics(targetId, source) {
+      const m = calcMetrics(source);
+      const el = document.getElementById(targetId);
+      if (!el) return;
+      el.innerHTML = [
+        metricCard('Season ROI', (m.roi >= 0 ? '+' : '') + m.roi.toFixed(1) + '%', `${m.settled} settled picks`, m.roi >= 0 ? 'up' : 'down'),
+        metricCard('Win Rate', m.winRate.toFixed(1) + '%', `${m.wins} wins / ${m.graded} graded • ${m.pushes} push`, 'blue'),
+        metricCard('Profit / Loss', fmtUnits(m.pl), `${m.stake.toFixed(2)}u total risk`, m.pl >= 0 ? 'up' : 'down'),
+        metricCard('Pending Picks', m.pending, 'Awaiting results', 'amber')
+      ].join('');
+    }
+
+    function renderMarketSplit(source) {
+      const markets = ['Moneyline','Run Line','Total','F5 Winner','F5 Handicap'];
+      const el = document.getElementById('marketSplit');
+      if (!el) return;
+      el.innerHTML = markets.map(market => {
+        const group = settledPicks(source).filter(p => p.market === market);
+        const graded = group.filter(p => p.status === 'win' || p.status === 'loss');
+        const pl = group.reduce((a, p) => a + profit(p), 0);
+        const wins = group.filter(p => p.status === 'win').length;
+        return `<div class="quality-row"><span>${market}</span><strong class="${pl >= 0 ? 'up' : 'down'}">${graded.length ? Math.round(wins / graded.length * 100) : 0}% • ${fmtUnits(pl)}</strong></div>`;
+      }).join('');
+    }
+
+    function renderProfitChart(source) {
+      const chart = document.getElementById('profitChart');
+      if (!chart) return;
+      const sorted = settledPicks(source).slice().sort((a, b) => a.date.localeCompare(b.date));
+      let running = 0;
+      const values = sorted.map(p => { running += profit(p); return running; });
+      if (!values.length) { chart.innerHTML = '<div class="filter-note" style="padding:16px">No settled picks in this filter yet.</div>'; return; }
+      const min = Math.min(...values, 0), max = Math.max(...values, 0), range = Math.max(0.01, max - min);
+      chart.innerHTML = values.map(v => `<div class="bar" title="${fmtUnits(v)}" style="height:${Math.max(10, ((v - min) / range) * 86 + 8)}%"></div>`).join('');
+    }
+
+    function renderHistory(source) {
+      const el = document.getElementById('historyRows');
+      if (!el) return;
+      if (!source.length) { el.innerHTML = '<div class="filter-note" style="padding:16px">No predictions match this filter.</div>'; return; }
+      el.innerHTML = source.map(p => `<div class="history-row">
+        <span>
+          <strong>${p.date}</strong><br>
+          <span class="market">${p.awayTeam} vs ${p.homeTeam} — ${p.pick}</span><br>
+          <span class="market">${scoreLabel(p)}</span>
+        </span>
+        <strong class="${p.status === 'win' ? 'up' : p.status === 'loss' ? 'down' : 'amber'}">${p.status.toUpperCase()}</strong>
+      </div>`).join('');
+    }
+
+    function render() {
+      const m = calcMetrics();
+      const fp = filteredPicks();
+      const td = todayPicks();
+      const summary = filterText(fp);
+      const fs = document.getElementById('filterSummary'); if (fs) fs.textContent = summary;
+      const hfs = document.getElementById('historyFilterSummary'); if (hfs) hfs.textContent = summary;
+      const demoSuffix = isDemo ? ' • ⚠️ Demo' : '';
+      document.getElementById('ticker').innerHTML = `
+        ${isDemo ? '<div class="chip demo-chip">⚠️ Sample Data</div>' : ''}
+        <div class="chip">ROI: ${(m.roi >= 0 ? '+' : '') + m.roi.toFixed(1)}%</div>
+        <div class="chip">Win Rate: ${m.winRate.toFixed(1)}%</div>
+        <div class="chip">CLV Module: Ready</div>
+        <div class="chip">Odds Format: Decimal</div>
+        <div class="chip">Settlement Queue: ${m.pending} Picks</div>`;
+
+      renderMetrics('metrics');
+      renderMetrics('analyticsMetrics', fp);
+
+      const todayLabel = document.getElementById('todayLabel');
+      if (todayLabel) todayLabel.textContent = isDemo ? '⚠️ Sample data' : `${td.length} pick${td.length !== 1 ? 's' : ''} today`;
+
+      const dashSlate = document.getElementById('dashboardSlate');
+      if (dashSlate) {
+        if (!picks.length) {
+          dashSlate.innerHTML = emptyState('⚾', 'No predictions published yet', 'Daily picks will appear here once the model publishes them.');
+        } else if (!td.length) {
+          dashSlate.innerHTML = emptyState('📅', 'No picks for today', 'Check back later — today\'s picks will appear when published.');
+        } else {
+          dashSlate.innerHTML = td.slice(0, 2).map(p => pickCard(p)).join('');
+        }
+      }
+
+      const slateList = document.getElementById('slateList');
+      if (slateList) {
+        if (!picks.length) {
+          slateList.innerHTML = emptyState('⚾', 'No predictions published yet', 'Daily picks will appear here once the MLB neural model publishes them.');
+        } else if (!td.length) {
+          slateList.innerHTML = emptyState('📅', 'No picks for today', 'Today\'s predictions haven\'t been published yet. Check back soon.');
+        } else {
+          slateList.innerHTML = td.map(p => pickCard(p)).join('');
+        }
+      }
+
+      const resultsList = document.getElementById('resultsList');
+      if (resultsList) {
+        const settled = settledPicks();
+        if (!settled.length) {
+          resultsList.innerHTML = emptyState('📊', 'No settled results yet', 'Completed picks with final scores and profit/loss will appear here.');
+        } else {
+          resultsList.innerHTML = settled.map(p => pickCard(p)).join('');
+        }
+      }
+
+      renderMarketSplit(fp);
+      renderProfitChart(fp);
+      renderHistory(fp);
+    }
+
+    // ── NAVIGATION ──
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      const el = document.getElementById(id);
+      if (el) el.classList.add('active');
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.screen === id));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    document.querySelectorAll('.nav-item').forEach(btn => btn.addEventListener('click', () => showScreen(btn.dataset.screen)));
+
+    // ── AUTH STATE LISTENER ──
+    sb.auth.onAuthStateChange((event, session) => {
+      console.log('[auth] event:', event, 'session:', session ? 'present' : 'none');
+      if (session && session.user) {
+        showMainApp(session.user);
+      } else {
+        picks = [];
+        showAuthUI();
+      }
+    });
+
+    // Handle email confirmation / password reset deep links
+    (async () => {
+      try {
+        if (window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('error_code') || window.location.hash.includes('type=signup') || window.location.hash.includes('type=recovery'))) {
+          const pill = document.getElementById('statusPill');
+          if (pill) { pill.className = 'status-pill loading'; pill.textContent = 'Confirming your account…'; }
+          setTimeout(() => { try { window.history.replaceState({}, document.title, window.location.pathname); } catch(e){} }, 2000);
+        }
+      } catch(e) { console.warn('[auth] init:', e); }
+    })();
+
+    // Handle Enter key on auth form
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !document.getElementById('authScreen').classList.contains('hidden')) {
+        handleAuth();
+      }
+    });
+  </script>
+</body>
+</html>
